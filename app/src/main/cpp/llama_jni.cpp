@@ -156,8 +156,8 @@ Java_com_orag_ai_LlamaBridge_getEmbedding(JNIEnv *env, jobject /*thiz*/, jstring
     llama_batch batch = llama_batch_get_one(tokens.data(), n_tokens);
     llama_decode(g_ctx, batch);
 
-    // Try sequence pooled embedding first, fall back to last-token embedding
-    const float *embd = llama_get_embeddings_seq(g_ctx, 0);
+    // Use last-token embedding (compatible across llama.cpp versions)
+    const float *embd = llama_get_embeddings_ith(g_ctx, n_tokens - 1);
     if (!embd) embd = llama_get_embeddings(g_ctx);
 
     jfloatArray result = env->NewFloatArray(n_embd);

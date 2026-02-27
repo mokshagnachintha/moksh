@@ -25,6 +25,16 @@ jobs:
     - name: Install NDK 25.1.8937393
       run: $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "ndk;25.1.8937393"
 
+    - name: Install ccache
+      run: sudo apt-get install -y ccache && ccache --max-size=2G
+
+    - name: Cache ccache objects
+      uses: actions/cache@v4
+      with:
+        path: ~/.ccache
+        key: ccache-android-${{ runner.os }}-${{ hashFiles('app/src/main/cpp/**') }}
+        restore-keys: ccache-android-${{ runner.os }}-
+
     - name: Setup Gradle 8.6
       uses: gradle/actions/setup-gradle@v4
       with:
