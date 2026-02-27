@@ -7,6 +7,7 @@ plugins {
 android {
     namespace = "com.orag"
     compileSdk = 34
+    ndkVersion = "25.1.8937393"
 
     defaultConfig {
         applicationId = "com.orag"

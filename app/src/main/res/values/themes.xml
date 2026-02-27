@@ -1,0 +1,7 @@
+<resources>
+    <!-- Base application theme for Compose app -->
+    <style name="Theme.ORAG" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@android:color/white</item>
+        <item name="android:statusBarColor">@color/purple_700</item>
+    </style>
+</resources>

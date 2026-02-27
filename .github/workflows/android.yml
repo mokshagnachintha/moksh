@@ -19,10 +19,8 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
         
-    - name: Setup Android NDK
-      uses: nttld/setup-ndk@v1
-      with:
-        ndk-version: r25c
+    - name: Install NDK 25.1.8937393
+      run: echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "ndk;25.1.8937393"
 
     - name: Setup Gradle 8.6
       uses: gradle/actions/setup-gradle@v3
