@@ -19,13 +19,17 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
         
+    - name: Accept Android SDK Licenses
+      run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
+
     - name: Install NDK 25.1.8937393
-      run: echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "ndk;25.1.8937393"
+      run: $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "ndk;25.1.8937393"
 
     - name: Setup Gradle 8.6
-      uses: gradle/actions/setup-gradle@v3
+      uses: gradle/actions/setup-gradle@v4
       with:
         gradle-version: '8.6'
+        validate-wrappers: false
 
     - name: Build Debug APK
       run: gradle assembleDebug --stacktrace
