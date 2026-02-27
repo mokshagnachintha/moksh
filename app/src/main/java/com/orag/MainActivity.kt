@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import com.orag.ui.ChatScreen
@@ -21,60 +22,77 @@ class MainActivity : ComponentActivity() {
 
     private val llamaApi = LlamaBridge()
 
+    /** Build the Qwen2.5-Instruct chat template around a user message. */
+    private fun buildQwenPrompt(userMessage: String): String =
+        "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n" +
+        "<|im_start|>user\n$userMessage<|im_end|>\n" +
+        "<|im_start|>assistant\n"
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
+
         setContent {
             MaterialTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    val messages = remember { mutableStateListOf<Message>() }
-                    var isLoading = remember { androidx.compose.runtime.mutableStateOf(true) }
+                    val messages  = remember { mutableStateListOf<Message>() }
+                    val isLoading = remember { mutableStateOf(true) }
+                    val statusMsg = remember { mutableStateOf("Initialising model…") }
 
-                    // We run the heavy 1.1GB file copy on a background thread
                     androidx.compose.runtime.LaunchedEffect(Unit) {
                         withContext(Dispatchers.IO) {
                             val modelName = "qwen2.5-1.5b-instruct-q4_k_m.gguf"
-                            val outFile = java.io.File(filesDir, modelName)
-                            
-                            // On the very first launch, download the 1.1GB model from the internet
+                            val outFile   = java.io.File(filesDir, modelName)
+
+                            // Download model on first launch
                             if (!outFile.exists()) {
-                                val url = java.net.URL("https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf")
+                                withContext(Dispatchers.Main) {
+                                    statusMsg.value = "Downloading model (≈900 MB)…"
+                                }
+                                val url = java.net.URL(
+                                    "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF" +
+                                    "/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf"
+                                )
                                 url.openStream().use { input ->
                                     java.io.FileOutputStream(outFile).use { output ->
                                         input.copyTo(output)
                                     }
                                 }
                             }
-                            
-                            // Load the true physical file path into the C++ Engine
-                            llamaApi.loadModel(outFile.absolutePath)
+
+                            withContext(Dispatchers.Main) {
+                                statusMsg.value = "Loading model into memory…"
+                            }
+                            val ok = llamaApi.loadModel(outFile.absolutePath)
+
+                            withContext(Dispatchers.Main) {
+                                if (ok) {
+                                    statusMsg.value = "Model ready"
+                                    isLoading.value = false
+                                } else {
+                                    statusMsg.value = "Failed to load model"
+                                    // keep isLoading = true so Send stays disabled
+                                }
+                            }
                         }
-                        isLoading.value = false
                     }
 
                     ChatScreen(
-                        messages = messages,
+                        messages      = messages,
                         isModelLoading = isLoading.value,
-                        onSendMessage = { userText ->
+                        statusMessage  = statusMsg.value,
+                        onSendMessage  = { userText ->
                             messages.add(Message("user", userText))
                             isLoading.value = true
-                            
-                            // Offload the heavy AI math to a background C++ thread so the UI stays 60fps
+
                             CoroutineScope(Dispatchers.IO).launch {
-                                // 1. Calculate Vector Embedding for user text
-                                val questionVector = llamaApi.getEmbedding(userText)
-                                
-                                // (If we had a real database hooked up, we would cosine similarity search here)
-                                
-                                // 2. Generate the Answer
-                                val answer = llamaApi.generateResponse("Answer this: $userText")
-                                
-                                // 3. Push back to the main UI Screen
+                                val prompt = buildQwenPrompt(userText)
+                                val answer = llamaApi.generateResponse(prompt)
+
                                 withContext(Dispatchers.Main) {
-                                    messages.add(Message("assistant", answer))
+                                    messages.add(Message("assistant", answer.trim()))
                                     isLoading.value = false
                                 }
                             }

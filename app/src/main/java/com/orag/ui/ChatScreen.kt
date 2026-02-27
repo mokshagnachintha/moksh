@@ -17,7 +17,8 @@ import androidx.compose.ui.unit.dp
 fun ChatScreen(
     onSendMessage: (String) -> Unit,
     messages: List<Message>,
-    isModelLoading: Boolean
+    isModelLoading: Boolean,
+    statusMessage: String = ""
 ) {
     var textState by remember { mutableStateOf("") }
 
@@ -54,7 +55,7 @@ fun ChatScreen(
             if (isModelLoading) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 Text(
-                    "Executing True Vector Search & Generation...",
+                    text = statusMessage.ifBlank { "Loading…" },
                     modifier = Modifier.align(Alignment.CenterHorizontally),
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.Gray
