@@ -20,13 +20,6 @@ android {
             }
         }
     }
-    
-    // CRITICAL: We must stop Android from compressing the giant 1.1GB model, 
-    // otherwise the app will crash out of memory trying to unzip it on launch!
-    androidResources {
-        noCompress += "gguf"
-    }
-
     buildTypes {
         release {
             isMinifyEnabled = false

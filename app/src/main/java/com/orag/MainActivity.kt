@@ -39,11 +39,12 @@ class MainActivity : ComponentActivity() {
                             val modelName = "qwen2.5-1.5b-instruct-q4_k_m.gguf"
                             val outFile = java.io.File(filesDir, modelName)
                             
-                            // On the very first launch, copy the 1.1GB model out of the hidden APK zip into pure storage
+                            // On the very first launch, download the 1.1GB model from the internet
                             if (!outFile.exists()) {
-                                assets.open(modelName).use { inputStream ->
-                                    java.io.FileOutputStream(outFile).use { outputStream ->
-                                        inputStream.copyTo(outputStream)
+                                val url = java.net.URL("https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf")
+                                url.openStream().use { input ->
+                                    java.io.FileOutputStream(outFile).use { output ->
+                                        input.copyTo(output)
                                     }
                                 }
                             }
