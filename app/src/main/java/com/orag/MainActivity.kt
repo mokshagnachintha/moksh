@@ -97,10 +97,32 @@ class MainActivity : ComponentActivity() {
 
                             CoroutineScope(Dispatchers.IO).launch {
                                 val prompt = buildQwenPrompt(historySnapshot)
-                                val answer = llamaApi.generateResponse(prompt)
+
+                                // Add an empty assistant bubble immediately so the user
+                                // sees text appear token-by-token instead of waiting
+                                withContext(Dispatchers.Main) {
+                                    messages.add(Message("assistant", ""))
+                                }
+
+                                val sb = StringBuilder()
+                                llamaApi.generateResponseStreaming(prompt) { piece ->
+                                    sb.append(piece)
+                                    val current = sb.toString()
+                                    // Update the live assistant bubble on the UI thread
+                                    this@MainActivity.runOnUiThread {
+                                        val lastIdx = messages.lastIndex
+                                        if (lastIdx >= 0 && messages[lastIdx].role == "assistant") {
+                                            messages[lastIdx] = Message("assistant", current)
+                                        }
+                                    }
+                                }
 
                                 withContext(Dispatchers.Main) {
-                                    messages.add(Message("assistant", answer.trim()))
+                                    // Trim trailing whitespace on the completed message
+                                    val lastIdx = messages.lastIndex
+                                    if (lastIdx >= 0 && messages[lastIdx].role == "assistant") {
+                                        messages[lastIdx] = Message("assistant", messages[lastIdx].content.trim())
+                                    }
                                     isLoading.value = false
                                 }
                             }

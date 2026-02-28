@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <ctime>
+#include <unistd.h>
 #include <android/log.h>
 #include "llama.h"
 
@@ -35,8 +36,12 @@ Java_com_orag_ai_LlamaBridge_loadModel(JNIEnv *env, jobject /*thiz*/, jstring mo
 
     llama_context_params cparams = llama_context_default_params();
     cparams.n_ctx           = 2048;
-    cparams.n_threads       = 4;
-    cparams.n_threads_batch = 4;
+    // Use all available CPU cores (capped at 8) for faster decode
+    int cpu_cores = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    if (cpu_cores < 1) cpu_cores = 4;
+    if (cpu_cores > 8) cpu_cores = 8;
+    cparams.n_threads       = cpu_cores;
+    cparams.n_threads_batch = cpu_cores;
 
     g_ctx = llama_init_from_model(g_model, cparams);
     if (!g_ctx) {
@@ -129,6 +134,72 @@ Java_com_orag_ai_LlamaBridge_generateResponse(JNIEnv *env, jobject /*thiz*/, jst
     llama_sampler_free(sampler);
     LOGI("Generated %zu chars", result.size());
     return env->NewStringUTF(result.c_str());
+}
+
+extern "C"
+JNIEXPORT void JNICALL
+Java_com_orag_ai_LlamaBridge_generateResponseStreaming(
+        JNIEnv *env, jobject /*thiz*/, jstring jprompt, jobject jcallback) {
+    if (!g_model || !g_ctx) return;
+
+    const char *raw = env->GetStringUTFChars(jprompt, nullptr);
+    std::string prompt(raw);
+    env->ReleaseStringUTFChars(jprompt, raw);
+
+    const struct llama_vocab *vocab = llama_model_get_vocab(g_model);
+
+    std::vector<llama_token> tokens(2048);
+    int n_tokens = llama_tokenize(
+        vocab,
+        prompt.c_str(), (int32_t)prompt.size(),
+        tokens.data(), (int32_t)tokens.size(),
+        /*add_special=*/true,
+        /*parse_special=*/true
+    );
+    if (n_tokens < 0) return;
+    tokens.resize(n_tokens);
+
+    llama_kv_self_clear(g_ctx);
+    llama_batch batch = llama_batch_get_one(tokens.data(), n_tokens);
+    if (llama_decode(g_ctx, batch) != 0) return;
+
+    llama_sampler *sampler = llama_sampler_chain_init(
+        llama_sampler_chain_default_params()
+    );
+    llama_sampler_chain_add(sampler, llama_sampler_init_top_k(40));
+    llama_sampler_chain_add(sampler, llama_sampler_init_top_p(0.95f, 1));
+    llama_sampler_chain_add(sampler, llama_sampler_init_temp(0.7f));
+    llama_sampler_chain_add(sampler, llama_sampler_init_dist((uint32_t)time(nullptr)));
+
+    const llama_token eos_token = llama_vocab_eos(vocab);
+
+    // Resolve the Kotlin StreamCallback.onToken method once
+    jclass   cbClass  = env->GetObjectClass(jcallback);
+    jmethodID onToken = env->GetMethodID(cbClass, "onToken", "(Ljava/lang/String;)V");
+
+    char piece_buf[256];
+    for (int i = 0; i < 256; ++i) {
+        llama_token new_tok = llama_sampler_sample(sampler, g_ctx, -1);
+        if (new_tok == eos_token) break;
+
+        int piece_len = llama_token_to_piece(
+            vocab, new_tok,
+            piece_buf, (int32_t)(sizeof(piece_buf) - 1),
+            /*lstrip=*/0, /*special=*/false
+        );
+        if (piece_len > 0) {
+            piece_buf[piece_len] = '\0';
+            jstring jpiece = env->NewStringUTF(piece_buf);
+            env->CallVoidMethod(jcallback, onToken, jpiece);
+            env->DeleteLocalRef(jpiece);
+        }
+
+        llama_batch next = llama_batch_get_one(&new_tok, 1);
+        if (llama_decode(g_ctx, next) != 0) break;
+    }
+
+    llama_sampler_free(sampler);
+    LOGI("Streaming generation complete");
 }
 
 extern "C"
