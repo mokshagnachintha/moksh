@@ -37,7 +37,12 @@ Java_com_orag_ai_LlamaBridge_loadModel(JNIEnv *env, jobject /*thiz*/, jstring mo
     }
 
     llama_context_params cparams = llama_context_default_params();
-    cparams.n_ctx           = 2048;
+    // 1024 tokens is enough for 6 turns of history (capped in Kotlin).
+    // Smaller context = 4x faster attention (O(n^2)) with no extra CPU.
+    cparams.n_ctx           = 1024;
+    cparams.n_batch         = 1024;  // process entire prompt in one batch
+    // Flash attention: cache-friendly block attention — less RAM reads per token
+    cparams.flash_attn      = true;
     // Cap at 4 threads on mobile: avoids thermal throttling on big.LITTLE chips
     // and prevents the OS from killing the process under memory pressure.
     // 4 is the sweet-spot recommended for on-device llama.cpp inference.
@@ -192,7 +197,8 @@ Java_com_orag_ai_LlamaBridge_generateResponseStreaming(
     llama_sampler *sampler = llama_sampler_chain_init(
         llama_sampler_chain_default_params()
     );
-    llama_sampler_chain_add(sampler, llama_sampler_init_top_k(40));
+    // Simplified sampler: top_p alone is sufficient — top_k is redundant
+    // and removing it saves one pass per generated token.
     llama_sampler_chain_add(sampler, llama_sampler_init_top_p(0.95f, 1));
     llama_sampler_chain_add(sampler, llama_sampler_init_temp(0.7f));
     llama_sampler_chain_add(sampler, llama_sampler_init_dist((uint32_t)time(nullptr)));
