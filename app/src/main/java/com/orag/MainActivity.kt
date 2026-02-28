@@ -25,9 +25,9 @@ class MainActivity : ComponentActivity() {
     /** Build the Qwen2.5-Instruct multi-turn chat template from full conversation history. */
     private fun buildQwenPrompt(history: List<Message>): String {
         val sb = StringBuilder()
-        sb.append("<|im_start|>system\nYou are a helpful assistant. Answer the user's questions directly and concisely.<|im_end|>\n")
-        // Keep the last 12 messages (6 turns) to stay within the 2048-token context window.
-        // Older turns are dropped; the KV cache covers the retained portion.
+        // Short system prompt: fewer tokens = less to decode on each KV cache miss
+        sb.append("<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n")
+        // Keep the last 12 messages (6 turns) to stay within the 1024-token context window.
         val recentHistory = if (history.size > 12) history.takeLast(12) else history
         for (msg in recentHistory) {
             sb.append("<|im_start|>${msg.role}\n${msg.content}<|im_end|>\n")
@@ -51,19 +51,19 @@ class MainActivity : ComponentActivity() {
 
                     androidx.compose.runtime.LaunchedEffect(Unit) {
                         withContext(Dispatchers.IO) {
-                            // Qwen2.5-1.5B Q2_K: 1.5B parameters with 2-bit quantization
-                            // ~same speed/size as 0.5B Q4_K_M but far better quality + embeddings
-                            val modelName = "qwen2.5-1.5b-instruct-q2_k.gguf"
+                            // Q4_K_M: faster ARM dequantization than Q2_K despite larger file
+                            // Q2_K has more complex dequant math — worse tok/s on ARM dotprod
+                            val modelName = "qwen2.5-1.5b-instruct-q4_k_m.gguf"
                             val outFile   = java.io.File(filesDir, modelName)
 
                             // Download model on first launch
                             if (!outFile.exists()) {
                                 withContext(Dispatchers.Main) {
-                                    statusMsg.value = "Downloading model (≈600 MB)…"
+                                    statusMsg.value = "Downloading model (≈900 MB)…"
                                 }
                                 val url = java.net.URL(
                                     "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF" +
-                                    "/resolve/main/qwen2.5-1.5b-instruct-q2_k.gguf"
+                                    "/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf"
                                 )
                                 url.openStream().use { input ->
                                     java.io.FileOutputStream(outFile).use { output ->
