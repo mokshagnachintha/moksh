@@ -24,7 +24,7 @@ Java_com_orag_ai_LlamaBridge_loadModel(JNIEnv *env, jobject /*thiz*/, jstring mo
     llama_model_params mparams = llama_model_default_params();
     mparams.n_gpu_layers = 0;   // CPU-only on Android
 
-    g_model = llama_load_model_from_file(path, mparams);
+    g_model = llama_model_load_from_file(path, mparams);
     env->ReleaseStringUTFChars(model_path, path);
 
     if (!g_model) {
@@ -33,28 +33,29 @@ Java_com_orag_ai_LlamaBridge_loadModel(JNIEnv *env, jobject /*thiz*/, jstring mo
     }
 
     llama_context_params cparams = llama_context_default_params();
-    cparams.n_ctx          = 2048;
-    cparams.n_threads      = 4;
+    cparams.n_ctx           = 2048;
+    cparams.n_threads       = 4;
     cparams.n_threads_batch = 4;
 
-    g_ctx = llama_new_context_with_model(g_model, cparams);
+    g_ctx = llama_init_from_model(g_model, cparams);
     if (!g_ctx) {
         LOGE("Failed to create context");
-        llama_free_model(g_model);
+        llama_model_free(g_model);
         g_model = nullptr;
         return JNI_FALSE;
     }
 
+    const struct llama_vocab *vocab = llama_model_get_vocab(g_model);
     LOGI("Model loaded successfully. Vocab: %d, Embed: %d",
-         llama_n_vocab(g_model), llama_n_embd(g_model));
+         llama_vocab_n_tokens(vocab), llama_model_n_embd(g_model));
     return JNI_TRUE;
 }
 
 extern "C"
 JNIEXPORT void JNICALL
 Java_com_orag_ai_LlamaBridge_unloadModel(JNIEnv */*env*/, jobject /*thiz*/) {
-    if (g_ctx)   { llama_free(g_ctx);         g_ctx   = nullptr; }
-    if (g_model) { llama_free_model(g_model); g_model = nullptr; }
+    if (g_ctx)   { llama_free(g_ctx);          g_ctx   = nullptr; }
+    if (g_model) { llama_model_free(g_model);  g_model = nullptr; }
     llama_backend_free();
     LOGI("Model unloaded");
 }
@@ -70,10 +71,12 @@ Java_com_orag_ai_LlamaBridge_generateResponse(JNIEnv *env, jobject /*thiz*/, jst
     std::string prompt(raw);
     env->ReleaseStringUTFChars(jprompt, raw);
 
+    const struct llama_vocab *vocab = llama_model_get_vocab(g_model);
+
     // ── Tokenise ────────────────────────────────────────────────────────────
     std::vector<llama_token> tokens(2048);
     int n_tokens = llama_tokenize(
-        g_model,
+        vocab,
         prompt.c_str(), (int32_t)prompt.size(),
         tokens.data(), (int32_t)tokens.size(),
         /*add_special=*/true,
@@ -85,7 +88,7 @@ Java_com_orag_ai_LlamaBridge_generateResponse(JNIEnv *env, jobject /*thiz*/, jst
     tokens.resize(n_tokens);
 
     // ── Decode prompt ───────────────────────────────────────────────────────
-    llama_kv_cache_clear(g_ctx);
+    llama_kv_self_clear(g_ctx);
     llama_batch batch = llama_batch_get_one(tokens.data(), n_tokens);
     if (llama_decode(g_ctx, batch) != 0) {
         return env->NewStringUTF("[Error: prompt decode failed]");
@@ -101,7 +104,7 @@ Java_com_orag_ai_LlamaBridge_generateResponse(JNIEnv *env, jobject /*thiz*/, jst
     llama_sampler_chain_add(sampler, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
 
     // ── Auto-regressive generation ──────────────────────────────────────────
-    const llama_token eos_token = llama_token_eos(g_model);
+    const llama_token eos_token = llama_vocab_eos(vocab);
     std::string result;
     result.reserve(512);
     char piece_buf[256];
@@ -111,7 +114,7 @@ Java_com_orag_ai_LlamaBridge_generateResponse(JNIEnv *env, jobject /*thiz*/, jst
         if (new_tok == eos_token) break;
 
         int piece_len = llama_token_to_piece(
-            g_model, new_tok,
+            vocab, new_tok,
             piece_buf, (int32_t)sizeof(piece_buf),
             /*lstrip=*/0, /*special=*/false
         );
@@ -129,7 +132,7 @@ Java_com_orag_ai_LlamaBridge_generateResponse(JNIEnv *env, jobject /*thiz*/, jst
 extern "C"
 JNIEXPORT jfloatArray JNICALL
 Java_com_orag_ai_LlamaBridge_getEmbedding(JNIEnv *env, jobject /*thiz*/, jstring jtext) {
-    const int n_embd = g_model ? llama_n_embd(g_model) : 768;
+    const int n_embd = g_model ? llama_model_n_embd(g_model) : 768;
 
     if (!g_model || !g_ctx) {
         jfloatArray empty = env->NewFloatArray(n_embd);
@@ -140,9 +143,11 @@ Java_com_orag_ai_LlamaBridge_getEmbedding(JNIEnv *env, jobject /*thiz*/, jstring
     std::string text(raw);
     env->ReleaseStringUTFChars(jtext, raw);
 
+    const struct llama_vocab *vocab = llama_model_get_vocab(g_model);
+
     std::vector<llama_token> tokens(512);
     int n_tokens = llama_tokenize(
-        g_model,
+        vocab,
         text.c_str(), (int32_t)text.size(),
         tokens.data(), (int32_t)tokens.size(),
         true, false
@@ -152,7 +157,7 @@ Java_com_orag_ai_LlamaBridge_getEmbedding(JNIEnv *env, jobject /*thiz*/, jstring
     }
     tokens.resize(n_tokens);
 
-    llama_kv_cache_clear(g_ctx);
+    llama_kv_self_clear(g_ctx);
     llama_batch batch = llama_batch_get_one(tokens.data(), n_tokens);
     llama_decode(g_ctx, batch);
 

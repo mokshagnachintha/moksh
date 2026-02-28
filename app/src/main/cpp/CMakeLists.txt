@@ -25,12 +25,13 @@ set(GGML_OPENMP               OFF CACHE BOOL "" FORCE)
 set(GGML_NATIVE               OFF CACHE BOOL "" FORCE)
 set(GGML_BUILD_TESTS          OFF CACHE BOOL "" FORCE)
 set(GGML_BUILD_EXAMPLES       OFF CACHE BOOL "" FORCE)
+set(GGML_BACKEND_DL           OFF CACHE BOOL "" FORCE)
 # ───────────────────────────────────────────────────────────────────────────
 
 FetchContent_Declare(
     llama_cpp
-    GIT_REPOSITORY https://github.com/ggerganov/llama.cpp.git
-    GIT_TAG        b4693
+    GIT_REPOSITORY https://github.com/ggml-org/llama.cpp.git
+    GIT_TAG        b4963
     GIT_SHALLOW    TRUE
 )
 FetchContent_MakeAvailable(llama_cpp)
