@@ -22,11 +22,16 @@ class MainActivity : ComponentActivity() {
 
     private val llamaApi = LlamaBridge()
 
-    /** Build the Qwen2.5-Instruct chat template around a user message. */
-    private fun buildQwenPrompt(userMessage: String): String =
-        "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n" +
-        "<|im_start|>user\n$userMessage<|im_end|>\n" +
-        "<|im_start|>assistant\n"
+    /** Build the Qwen2.5-Instruct multi-turn chat template from full conversation history. */
+    private fun buildQwenPrompt(history: List<Message>): String {
+        val sb = StringBuilder()
+        sb.append("<|im_start|>system\nYou are a helpful assistant. Answer the user's questions directly and concisely.<|im_end|>\n")
+        for (msg in history) {
+            sb.append("<|im_start|>${msg.role}\n${msg.content}<|im_end|>\n")
+        }
+        sb.append("<|im_start|>assistant\n")
+        return sb.toString()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -86,9 +91,12 @@ class MainActivity : ComponentActivity() {
                         onSendMessage  = { userText ->
                             messages.add(Message("user", userText))
                             isLoading.value = true
+                            // Snapshot the full history (including the new user message)
+                            // so the model sees the complete conversation context
+                            val historySnapshot = messages.toList()
 
                             CoroutineScope(Dispatchers.IO).launch {
-                                val prompt = buildQwenPrompt(userText)
+                                val prompt = buildQwenPrompt(historySnapshot)
                                 val answer = llamaApi.generateResponse(prompt)
 
                                 withContext(Dispatchers.Main) {

@@ -1,6 +1,7 @@
 #include <jni.h>
 #include <string>
 #include <vector>
+#include <ctime>
 #include <android/log.h>
 #include "llama.h"
 
@@ -101,7 +102,8 @@ Java_com_orag_ai_LlamaBridge_generateResponse(JNIEnv *env, jobject /*thiz*/, jst
     llama_sampler_chain_add(sampler, llama_sampler_init_top_k(40));
     llama_sampler_chain_add(sampler, llama_sampler_init_top_p(0.95f, 1));
     llama_sampler_chain_add(sampler, llama_sampler_init_temp(0.7f));
-    llama_sampler_chain_add(sampler, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
+    // Use current time as seed so each call produces different output
+    llama_sampler_chain_add(sampler, llama_sampler_init_dist((uint32_t)time(nullptr)));
 
     // ── Auto-regressive generation ──────────────────────────────────────────
     const llama_token eos_token = llama_vocab_eos(vocab);
