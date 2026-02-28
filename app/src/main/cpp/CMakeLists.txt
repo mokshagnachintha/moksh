@@ -26,6 +26,7 @@ set(GGML_NATIVE               OFF CACHE BOOL "" FORCE)
 set(GGML_BUILD_TESTS          OFF CACHE BOOL "" FORCE)
 set(GGML_BUILD_EXAMPLES       OFF CACHE BOOL "" FORCE)
 set(GGML_BACKEND_DL           OFF CACHE BOOL "" FORCE)
+set(GGML_LLAMAFILE            OFF CACHE BOOL "" FORCE)
 # ───────────────────────────────────────────────────────────────────────────
 
 FetchContent_Declare(
