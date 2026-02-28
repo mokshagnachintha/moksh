@@ -210,9 +210,9 @@ Java_com_orag_ai_LlamaBridge_generateResponseStreaming(
     jmethodID onToken = env->GetMethodID(cbClass, "onToken", "(Ljava/lang/String;)V");
 
     char piece_buf[256];
-    // 200 token cap: at ~5 tok/s on mobile this = max 40s wait
-    // Most answers fit well within 200 tokens
-    for (int i = 0; i < 200; ++i) {
+    // 150 token cap: at ~5 tok/s on mobile this = max 30s wait.
+    // Most conversational replies fit well within 150 tokens.
+    for (int i = 0; i < 150; ++i) {
         llama_token new_tok = llama_sampler_sample(sampler, g_ctx, -1);
         if (new_tok == eos_token) break;
 

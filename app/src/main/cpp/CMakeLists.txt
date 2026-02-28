@@ -51,3 +51,21 @@ target_link_libraries(llama_jni
     llama
     ${log-lib}
 )
+
+# ── ARM64 vectorisation flags ─────────────────────────────────────────────
+# dotprod  : 8-bit dot-product — 4× faster Q4 matrix-vector multiply
+# i8mm     : 8-bit integer matrix multiply (Snapdragon 865+ / Dimensity 1200+)
+# fp16     : native 16-bit float arithmetic
+# -O3      : full compiler optimisation (default NDK is -O2)
+# Only applied for arm64-v8a; other ABIs are already filtered out.
+if(ANDROID_ABI STREQUAL "arm64-v8a")
+    target_compile_options(llama_jni PRIVATE
+        -O3
+        -march=armv8.4-a+dotprod+i8mm+fp16
+    )
+    # Apply the same flags to ggml so the hot kernels benefit too
+    target_compile_options(ggml PRIVATE
+        -O3
+        -march=armv8.4-a+dotprod+i8mm+fp16
+    )
+endif()
