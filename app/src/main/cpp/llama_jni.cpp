@@ -1,6 +1,7 @@
 #include <jni.h>
 #include <string>
 #include <vector>
+#include <algorithm>
 #include <ctime>
 #include <android/log.h>
 #include "llama.h"
@@ -10,8 +11,10 @@
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
 
 // ── Global state (single model + context) ─────────────────────────────────
-static llama_model   * g_model = nullptr;
-static llama_context * g_ctx   = nullptr;
+static llama_model              * g_model = nullptr;
+static llama_context            * g_ctx   = nullptr;
+// KV-cache reuse: remember which tokens are already decoded in the cache
+static std::vector<llama_token>   g_cached_tokens;
 // ──────────────────────────────────────────────────────────────────────────
 
 extern "C"
@@ -60,6 +63,7 @@ JNIEXPORT void JNICALL
 Java_com_orag_ai_LlamaBridge_unloadModel(JNIEnv */*env*/, jobject /*thiz*/) {
     if (g_ctx)   { llama_free(g_ctx);          g_ctx   = nullptr; }
     if (g_model) { llama_model_free(g_model);  g_model = nullptr; }
+    g_cached_tokens.clear();
     llama_backend_free();
     LOGI("Model unloaded");
 }
@@ -157,9 +161,33 @@ Java_com_orag_ai_LlamaBridge_generateResponseStreaming(
     if (n_tokens < 0) return;
     tokens.resize(n_tokens);
 
-    llama_kv_self_clear(g_ctx);
-    llama_batch batch = llama_batch_get_one(tokens.data(), n_tokens);
-    if (llama_decode(g_ctx, batch) != 0) return;
+    // ── KV-cache reuse: only decode tokens that changed ──────────────────────
+    // Find the longest common prefix between the new prompt and what is already
+    // in the KV cache from the previous turn.
+    int common_len = 0;
+    {
+        int min_len = (int)std::min(g_cached_tokens.size(), (size_t)n_tokens);
+        while (common_len < min_len && g_cached_tokens[common_len] == tokens[common_len]) {
+            ++common_len;
+        }
+    }
+    LOGI("KV cache reuse: %d / %d tokens shared, decoding %d new tokens",
+         common_len, n_tokens, n_tokens - common_len);
+
+    // Drop KV entries for positions >= common_len (the part that changed)
+    llama_kv_self_seq_rm(g_ctx, 0, common_len, -1);
+
+    // Decode only the new/changed tail
+    if (common_len < n_tokens) {
+        llama_batch batch = llama_batch_get_one(tokens.data() + common_len, n_tokens - common_len);
+        if (llama_decode(g_ctx, batch) != 0) {
+            g_cached_tokens.clear();  // cache is now unknown — reset
+            return;
+        }
+    }
+    // Remember the full token sequence now in the KV cache
+    g_cached_tokens = tokens;
+    // ──────────────────────────────────────────────────────────────────────────
 
     llama_sampler *sampler = llama_sampler_chain_init(
         llama_sampler_chain_default_params()
@@ -176,9 +204,14 @@ Java_com_orag_ai_LlamaBridge_generateResponseStreaming(
     jmethodID onToken = env->GetMethodID(cbClass, "onToken", "(Ljava/lang/String;)V");
 
     char piece_buf[256];
-    for (int i = 0; i < 256; ++i) {
+    // 200 token cap: at ~5 tok/s on mobile this = max 40s wait
+    // Most answers fit well within 200 tokens
+    for (int i = 0; i < 200; ++i) {
         llama_token new_tok = llama_sampler_sample(sampler, g_ctx, -1);
         if (new_tok == eos_token) break;
+
+        // Track in the KV cache so the next turn can reuse this data
+        g_cached_tokens.push_back(new_tok);
 
         int piece_len = llama_token_to_piece(
             vocab, new_tok,

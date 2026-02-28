@@ -26,7 +26,10 @@ class MainActivity : ComponentActivity() {
     private fun buildQwenPrompt(history: List<Message>): String {
         val sb = StringBuilder()
         sb.append("<|im_start|>system\nYou are a helpful assistant. Answer the user's questions directly and concisely.<|im_end|>\n")
-        for (msg in history) {
+        // Keep the last 12 messages (6 turns) to stay within the 2048-token context window.
+        // Older turns are dropped; the KV cache covers the retained portion.
+        val recentHistory = if (history.size > 12) history.takeLast(12) else history
+        for (msg in recentHistory) {
             sb.append("<|im_start|>${msg.role}\n${msg.content}<|im_end|>\n")
         }
         sb.append("<|im_start|>assistant\n")
