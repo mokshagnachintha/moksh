@@ -2,7 +2,6 @@
 #include <string>
 #include <vector>
 #include <ctime>
-#include <unistd.h>
 #include <android/log.h>
 #include "llama.h"
 
@@ -36,12 +35,11 @@ Java_com_orag_ai_LlamaBridge_loadModel(JNIEnv *env, jobject /*thiz*/, jstring mo
 
     llama_context_params cparams = llama_context_default_params();
     cparams.n_ctx           = 2048;
-    // Use all available CPU cores (capped at 8) for faster decode
-    int cpu_cores = (int)sysconf(_SC_NPROCESSORS_ONLN);
-    if (cpu_cores < 1) cpu_cores = 4;
-    if (cpu_cores > 8) cpu_cores = 8;
-    cparams.n_threads       = cpu_cores;
-    cparams.n_threads_batch = cpu_cores;
+    // Cap at 4 threads on mobile: avoids thermal throttling on big.LITTLE chips
+    // and prevents the OS from killing the process under memory pressure.
+    // 4 is the sweet-spot recommended for on-device llama.cpp inference.
+    cparams.n_threads       = 4;
+    cparams.n_threads_batch = 4;
 
     g_ctx = llama_init_from_model(g_model, cparams);
     if (!g_ctx) {
