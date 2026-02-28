@@ -22,17 +22,18 @@ class MainActivity : ComponentActivity() {
 
     private val llamaApi = LlamaBridge()
 
-    /** Build the Qwen2.5-Instruct multi-turn chat template from full conversation history. */
-    private fun buildQwenPrompt(history: List<Message>): String {
+    /** Build the Llama-3.2 multi-turn chat template from full conversation history.
+     *  Format: <|start_header_id|>role<|end_header_id|>\n\ncontent<|eot_id|>
+     *  BOS (<|begin_of_text|>) is added automatically by llama_tokenize(add_special=true)
+     */
+    private fun buildPrompt(history: List<Message>): String {
         val sb = StringBuilder()
-        // Short system prompt: fewer tokens = less to decode on each KV cache miss
-        sb.append("<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n")
-        // Keep the last 12 messages (6 turns) to stay within the 1024-token context window.
+        sb.append("<|start_header_id|>system<|end_header_id|>\n\nYou are a helpful assistant.<|eot_id|>\n")
         val recentHistory = if (history.size > 12) history.takeLast(12) else history
         for (msg in recentHistory) {
-            sb.append("<|im_start|>${msg.role}\n${msg.content}<|im_end|>\n")
+            sb.append("<|start_header_id|>${msg.role}<|end_header_id|>\n\n${msg.content}<|eot_id|>\n")
         }
-        sb.append("<|im_start|>assistant\n")
+        sb.append("<|start_header_id|>assistant<|end_header_id|>\n\n")
         return sb.toString()
     }
 
@@ -51,19 +52,20 @@ class MainActivity : ComponentActivity() {
 
                     androidx.compose.runtime.LaunchedEffect(Unit) {
                         withContext(Dispatchers.IO) {
-                            // Q4_K_M: faster ARM dequantization than Q2_K despite larger file
-                            // Q2_K has more complex dequant math — worse tok/s on ARM dotprod
-                            val modelName = "qwen2.5-1.5b-instruct-q4_k_m.gguf"
+                            // Llama-3.2-1B Q4_K_M: 1B params (33% fewer than current 1.5B)
+                            // = faster tok/s, same ARM dotprod kernel, Q4_K_M optimal dequant
+                            // Public GGUF, no HF login required
+                            val modelName = "Llama-3.2-1B-Instruct-Q4_K_M.gguf"
                             val outFile   = java.io.File(filesDir, modelName)
 
                             // Download model on first launch
                             if (!outFile.exists()) {
                                 withContext(Dispatchers.Main) {
-                                    statusMsg.value = "Downloading model (≈900 MB)…"
+                                    statusMsg.value = "Downloading model (≈770 MB)…"
                                 }
                                 val url = java.net.URL(
-                                    "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF" +
-                                    "/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf"
+                                    "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF" +
+                                    "/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf"
                                 )
                                 url.openStream().use { input ->
                                     java.io.FileOutputStream(outFile).use { output ->
@@ -101,7 +103,7 @@ class MainActivity : ComponentActivity() {
                             val historySnapshot = messages.toList()
 
                             CoroutineScope(Dispatchers.IO).launch {
-                                val prompt = buildQwenPrompt(historySnapshot)
+                                val prompt = buildPrompt(historySnapshot)
 
                                 // Add an empty assistant bubble immediately so the user
                                 // sees text appear token-by-token instead of waiting
