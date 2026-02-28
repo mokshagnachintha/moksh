@@ -51,19 +51,19 @@ class MainActivity : ComponentActivity() {
 
                     androidx.compose.runtime.LaunchedEffect(Unit) {
                         withContext(Dispatchers.IO) {
-                            // 0.5B model: ~300MB, ~3x faster inference than 1.5B
-                            // Same Qwen2.5-Instruct family — identical prompt format
-                            val modelName = "qwen2.5-0.5b-instruct-q4_k_m.gguf"
+                            // Qwen2.5-1.5B Q2_K: 1.5B parameters with 2-bit quantization
+                            // ~same speed/size as 0.5B Q4_K_M but far better quality + embeddings
+                            val modelName = "qwen2.5-1.5b-instruct-q2_k.gguf"
                             val outFile   = java.io.File(filesDir, modelName)
 
                             // Download model on first launch
                             if (!outFile.exists()) {
                                 withContext(Dispatchers.Main) {
-                                    statusMsg.value = "Downloading model (≈300 MB)…"
+                                    statusMsg.value = "Downloading model (≈600 MB)…"
                                 }
                                 val url = java.net.URL(
-                                    "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF" +
-                                    "/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf"
+                                    "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF" +
+                                    "/resolve/main/qwen2.5-1.5b-instruct-q2_k.gguf"
                                 )
                                 url.openStream().use { input ->
                                     java.io.FileOutputStream(outFile).use { output ->
